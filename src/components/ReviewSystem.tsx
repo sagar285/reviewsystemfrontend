@@ -1,175 +1,150 @@
-
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";  
 import { Search } from "lucide-react";
-import { Company, Review } from "@/types";
+import { Company } from "@/types";
+import { apiUrl, fetchApi } from "@/lib/api";
 import CompanyList from "./reviews/CompanyList";
-import ReviewList from "./reviews/ReviewList";
-import ReviewForm from "./reviews/ReviewForm"; 
+import AddCompanyForm from "./reviews/AddCompanyForm";
 import { ThemeToggle } from "./ThemeToggle";
 
 export default function ReviewSystem() {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
-  const [reviews, setReviews] = useState<Review[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addFormName, setAddFormName] = useState("");
 
-  // Initial fetch and search
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const list = await fetchApi<string[]>("/api/companies/categories");
+        setCategories(Array.isArray(list) ? list : []);
+      } catch {
+        setCategories([]);
+      }
+    };
+    loadCategories();
+  }, []);
+
   useEffect(() => {
     const fetchCompanies = async () => {
       setLoading(true);
       try {
-        // If query is empty, it fetches top companies (handled by backend optimization)
-        const url = `https://reviewsystembackend-yndf.onrender.com/api/companies?q=${query}`;
+        const params: Record<string, string> = {};
+        if (query) params.q = query;
+        if (selectedCategory) params.category = selectedCategory;
+        const url = apiUrl("/api/companies", params);
         const res = await fetch(url);
         const data = await res.json();
-        setCompanies(data);
-      } catch (error) {
-        console.error("Error fetching companies:", error);
+        setCompanies(Array.isArray(data) ? data : []);
+      } catch {
+        toast.error("Failed to load companies");
+        setCompanies([]);
       } finally {
         setLoading(false);
       }
     };
+    const t = setTimeout(fetchCompanies, 300);
+    return () => clearTimeout(t);
+  }, [query, selectedCategory]);
 
-    const debounce = setTimeout(fetchCompanies, 300);
-    return () => clearTimeout(debounce);
-  }, [query]);
-
-  // Fetch Reviews when company selected
-  useEffect(() => {
-    if (selectedCompany) {
-      fetch(`https://reviewsystembackend-yndf.onrender.com/api/reviews/${selectedCompany._id}`)
-        .then((res) => res.json())
-        .then((data) => setReviews(data))
-        .catch((err) => console.error(err));
-    }
-  }, [selectedCompany]);
-
-  const handleAddCompany = async () => {
-    try {
-      const res = await fetch('https://reviewsystembackend-yndf.onrender.com/api/companies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: query, description: 'Community added company' })
-      });
-      if (res.ok) {
-        const newCompany = await res.json();
-        setCompanies([newCompany]);
-        setSelectedCompany(newCompany);
-      }
-    } catch (error) {
-      console.error("Error adding company:", error);
-    }
+  const handleAddCompanyClick = () => {
+    setAddFormName(query);
+    setShowAddForm(true);
   };
 
-  const handleReviewAdded = (newReview: Review) => {
-    setReviews([newReview, ...reviews]);
+  const handleAddCompanySuccess = (company: Company) => {
+    setShowAddForm(false);
+    setQuery("");
+    setCompanies([company]);
+    const token = company.claimToken;
+    if (token) {
+      toast.success(
+        <span>
+          Company added. Use this token to reply as owner: <code className="text-xs bg-muted px-1 rounded">{token.slice(0, 12)}...</code>
+        </span>,
+        { duration: 8000 }
+      );
+      if (typeof window !== "undefined") {
+        localStorage.setItem(`claim_${company._id}`, token);
+      }
+    }
+    router.push(`/company/${company._id}?token=${company.claimToken || ""}`);
   };
 
   return (
-    <div className="min-h-screen w-full bg-background text-foreground p-4 md:p-8 overflow-x-hidden transition-colors duration-300 relative">
+    <div className="min-h-screen w-full bg-background text-foreground p-4 sm:p-6 md:p-8 overflow-x-hidden transition-colors duration-300 relative">
       <div className="absolute top-4 right-4 z-50">
         <ThemeToggle />
       </div>
-      <div className="max-w-7xl mx-auto space-y-8">
-        
-        {/* Header Section */}
-        <div className="text-center space-y-4 py-8">
-          <h1 className="text-4xl md:text-6xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-primary to-purple-500 drop-shadow-lg">
+      <div className="max-w-6xl mx-auto space-y-6 sm:space-y-8">
+        <header className="text-center space-y-3 sm:space-y-4 py-6 sm:py-8">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-primary to-purple-500 drop-shadow-lg">
             Company Reviews
           </h1>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+          <p className="text-muted-foreground text-base sm:text-lg max-w-2xl mx-auto px-2">
             Discover transparent reviews from real employees and customers.
           </p>
-        </div>
+        </header>
 
-        {/* Search Bar - Only show when no company selected */}
-        {!selectedCompany && (
+        {!showAddForm && (
           <div className="relative max-w-2xl mx-auto group">
-            <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-blue-500 rounded-full blur opacity-25 group-hover:opacity-50 transition duration-500"></div>
-            <div className="relative flex items-center bg-background/50 backdrop-blur-xl border border-border rounded-full px-6 py-2 shadow-2xl">
-              <Search className="w-6 h-6 text-muted-foreground mr-3" />
+            <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-purple-500/20 rounded-full blur opacity-25 group-hover:opacity-40 transition duration-500" />
+            <div className="relative flex items-center bg-background/50 backdrop-blur-xl border border-border rounded-full px-4 sm:px-6 py-2 shadow-xl">
+              <Search className="w-5 h-5 sm:w-6 sm:h-6 text-muted-foreground mr-2 sm:mr-3 flex-shrink-0" />
               <Input
                 placeholder="Search for a company..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="border-0 bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0 text-lg py-6"
+                className="border-0 bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0 text-base sm:text-lg py-5 sm:py-6"
               />
             </div>
           </div>
         )}
 
-        {/* Main Content Area */}
-        <div className="transition-all duration-500 ease-in-out">
-          {!selectedCompany ? (
-            <div className="space-y-6">
-               <div className="flex items-center justify-between px-4">
-                  <h2 className="text-2xl font-bold text-white">
-                    {query ? 'Search Results' : 'Trending Companies'}
-                  </h2>
-               </div>
-               
-               {loading ? (
-                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                   {[1,2,3].map(i => (
-                     <div key={i} className="h-40 rounded-xl bg-white/5 animate-pulse" />
-                   ))}
-                 </div>
-               ) : (
-                 <CompanyList 
-                   companies={companies}
-                   onSelectCompany={setSelectedCompany}
-                   query={query}
-                   showAddOption={!!query && companies.length === 0}
-                   onAddCompany={handleAddCompany}
-                 />
-               )}
-            </div>
+        <section className="transition-all duration-500 ease-in-out">
+          {showAddForm ? (
+            <AddCompanyForm
+              initialName={addFormName}
+              onSuccess={handleAddCompanySuccess}
+              onCancel={() => setShowAddForm(false)}
+            />
           ) : (
-            <div className="animate-in slide-in-from-bottom-10 fade-in duration-500">
-              <Button 
-                variant="ghost" 
-                onClick={() => setSelectedCompany(null)}
-                className="mb-6 text-white hover:bg-white/10 hover:text-white"
-              >
-                ← Back to Search
-              </Button>
-              
-              <div className="grid lg:grid-cols-12 gap-8">
-                {/* Left Column: Company Info & Review Form */}
-                <div className="lg:col-span-4 space-y-8">
-                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-8 shadow-2xl">
-                    <h2 className="text-3xl font-bold text-white mb-4">{selectedCompany.name}</h2>
-                    <p className="text-gray-300 leading-relaxed">
-                      {selectedCompany.description || "No description available for this company."}
-                    </p>
-                  </div>
-                  
-                  <div className="sticky top-8">
-                    <ReviewForm 
-                      companyId={selectedCompany._id} 
-                      onReviewAdded={handleReviewAdded} 
-                    />
-                  </div>
-                </div>
+            <div className="space-y-4 sm:space-y-6">
+              <h2 className="text-xl sm:text-2xl font-bold text-foreground px-1">
+                {query || selectedCategory ? "Search Results" : "Trending Companies"}
+              </h2>
 
-                {/* Right Column: Reviews List */}
-                <div className="lg:col-span-8 space-y-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-2xl font-bold text-white">
-                      Recent Reviews ({reviews.length})
-                    </h3>
-                  </div>
-                  <ReviewList reviews={reviews} />
+              {loading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                  {[1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className="h-36 sm:h-40 rounded-xl bg-muted/50 animate-pulse"
+                    />
+                  ))}
                 </div>
-              </div>
+              ) : (
+                <CompanyList
+                  companies={companies}
+                  query={query}
+                  showAddOption={!!query.trim() && companies.length === 0}
+                  onAddCompany={handleAddCompanyClick}
+                  categories={categories}
+                  selectedCategory={selectedCategory}
+                  onCategoryChange={setSelectedCategory}
+                />
+              )}
             </div>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );
